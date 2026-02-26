@@ -5,6 +5,8 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 
+console.log("Starting Chronos Attendance System Server...");
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -39,6 +41,8 @@ if (employeeCount.count === 0) {
   db.prepare("INSERT INTO employees (id, name, pin, is_admin) VALUES (?, ?, ?, ?)").run("ADMIN01", "Admin User", "9999", 1);
 }
 
+console.log("Database initialized. Employees in system:", db.prepare("SELECT id, name, is_admin FROM employees").all());
+
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadsDir)) {
@@ -55,15 +59,24 @@ async function startServer() {
   // API Routes
   app.post("/api/login", (req, res) => {
     const { employeeId, pin } = req.body;
-    const employee = db.prepare("SELECT * FROM employees WHERE id = ? AND pin = ?").get(employeeId, pin) as any;
+    console.log(`Login attempt for ID: ${employeeId}`);
     
-    if (employee) {
-      res.json({ 
-        success: true, 
-        user: { id: employee.id, name: employee.name, isAdmin: !!employee.is_admin } 
-      });
-    } else {
-      res.status(401).json({ success: false, message: "Invalid ID or PIN" });
+    try {
+      const employee = db.prepare("SELECT * FROM employees WHERE id = ? AND pin = ?").get(employeeId, pin) as any;
+      
+      if (employee) {
+        console.log(`Login successful for: ${employee.name}`);
+        res.json({ 
+          success: true, 
+          user: { id: employee.id, name: employee.name, isAdmin: !!employee.is_admin } 
+        });
+      } else {
+        console.log(`Login failed: Invalid ID or PIN for ${employeeId}`);
+        res.status(401).json({ success: false, message: "Invalid ID or PIN" });
+      }
+    } catch (error) {
+      console.error("Database error during login:", error);
+      res.status(500).json({ success: false, message: "Internal server error" });
     }
   });
 
