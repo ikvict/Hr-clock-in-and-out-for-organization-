@@ -177,6 +177,14 @@ function LoginView({ onLogin }: { onLogin: (user: User) => void }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ employeeId, pin }),
       });
+      
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error(`Login failed with status ${res.status}: ${errorText}`);
+        setError(`Server error (${res.status}). Please try again.`);
+        return;
+      }
+
       const data = await res.json();
       if (data.success) {
         onLogin(data.user);
@@ -184,7 +192,8 @@ function LoginView({ onLogin }: { onLogin: (user: User) => void }) {
         setError(data.message);
       }
     } catch (err) {
-      setError('Connection failed');
+      console.error("Login error:", err);
+      setError('Connection failed. Check your internet or server status.');
     } finally {
       setLoading(false);
     }

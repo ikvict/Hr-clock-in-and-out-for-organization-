@@ -10,7 +10,9 @@ console.log("Starting Chronos Attendance System Server...");
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const db = new Database("attendance.db");
+// Use in-memory DB on Netlify because it doesn't support persistent SQLite files
+const dbPath = process.env.NETLIFY ? ":memory:" : "attendance.db";
+const db = new Database(dbPath);
 
 // Initialize database
 db.exec(`
@@ -43,15 +45,14 @@ if (employeeCount.count === 0) {
 
 console.log("Database initialized. Employees in system:", db.prepare("SELECT id, name, is_admin FROM employees").all());
 
-// Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, "uploads");
-if (!fs.existsSync(uploadsDir)) {
+// Ensure uploads directory exists (skip on Netlify as it's read-only)
+const uploadsDir = process.env.NETLIFY ? "/tmp" : path.join(__dirname, "uploads");
+if (!process.env.NETLIFY && !fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
 }
 
-async function startServer() {
+export async function createApp() {
   const app = express();
-  const PORT = 3000;
 
   app.use(express.json({ limit: '10mb' }));
   app.use('/uploads', express.static(uploadsDir));
@@ -85,10 +86,15 @@ async function startServer() {
     
     let photoPath = null;
     if (photo) {
-      const base64Data = photo.replace(/^data:image\/png;base64,/, "");
-      const fileName = `${employeeId}_${Date.now()}.png`;
-      photoPath = `/uploads/${fileName}`;
-      fs.writeFileSync(path.join(uploadsDir, fileName), base64Data, 'base64');
+      try {
+        const base64Data = photo.replace(/^data:image\/png;base64,/, "");
+        const fileName = `${employeeId}_${Date.now()}.png`;
+        photoPath = `/uploads/${fileName}`;
+        fs.writeFileSync(path.join(uploadsDir, fileName), base64Data, 'base64');
+      } catch (err) {
+        console.error("Failed to save photo:", err);
+        photoPath = null; // Continue without photo if saving fails
+      }
     }
 
     db.prepare(`
@@ -134,23 +140,30 @@ async function startServer() {
     res.send(csvRows.join("\n"));
   });
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    app.use(express.static(path.join(__dirname, "dist")));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(__dirname, "dist", "index.html"));
-    });
+  // Only handle static files and Vite if NOT on Netlify
+  if (!process.env.NETLIFY) {
+    if (process.env.NODE_ENV !== "production") {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } else {
+      app.use(express.static(path.join(__dirname, "dist")));
+      app.get("*", (req, res) => {
+        res.sendFile(path.join(__dirname, "dist", "index.html"));
+      });
+    }
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  return app;
 }
 
-startServer();
+if (process.env.NODE_ENV !== "production" || !process.env.NETLIFY) {
+  createApp().then(app => {
+    const PORT = 3000;
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  });
+}
