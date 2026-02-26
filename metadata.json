@@ -1,0 +1,8 @@
+{
+  "name": "Chronos Attendance System",
+  "description": "A professional attendance clock-in register with geolocation, photo verification, and admin reporting.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}
